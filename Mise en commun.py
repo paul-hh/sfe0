@@ -150,12 +150,12 @@ for time in tqdm(range(0, 1000)):
     list_soc_ini = [net.storage.at[nombre_de_foyers, 'soc_percent'] for k in range(0, nombre_de_foyers)]
 
     for pv in range(0, nombre_de_foyers):
-        tirage = random()
-        if tirage >= 0.5:
-            decalage = - 4 * tirage
-        else:
-            decalage = 4 * (1 - tirage)
-        puissances_pvs.append(list_gaussienne(net.sgen.at[pv, 'p_mw'], len(timesteps) / 2 + decalage, len(timesteps) / 5,
+        # tirage = random()
+        # if tirage >= 0.5:
+        #     decalage = - 4 * tirage
+        # else:
+        #     decalage = 4 * (1 - tirage)
+        puissances_pvs.append(list_gaussienne(net.sgen.at[pv, 'p_mw'], len(timesteps) / 2, len(timesteps) / 5,
                                               timesteps))
         puissances_loads.append(list_charges(mini_charge, timesteps, 2 * nombre_de_foyers + pv))
 

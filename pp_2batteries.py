@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 L_perdue = []
 N_perdue = []
 
-for k in range(0, 100):
+for k in range(0, 10):
     net = pp.create_empty_network()
     n_perdue = 0
     # Création des bus :
@@ -60,7 +60,7 @@ for k in range(0, 100):
         x = t.copy()
         y = x.copy()
         for k in range(len(x)):
-            y[k] = amplitude * np.exp(-(x[k] - centre)**2 / (2 * ecart_type**2)) + (random() / 10) * amplitude
+            y[k] = amplitude * np.exp(-(x[k] - centre) ** 2 / (2 * ecart_type ** 2)) + (random() / 10) * amplitude
         return y
 
 
@@ -316,14 +316,19 @@ for k in range(0, 100):
 # moyenne2 = sum(N_perdue) / len(N_perdue)
 # print("moyenne1 perdue = " + str(moyenne1))
 # print("moyenne2 perdue = " + str(moyenne2))
-
+for tps in range(0, len(list_pv_power1)):
+    list_pv_power1[tps] = 1000 * list_pv_power1[tps]
+    list_pv_power2[tps] = 1000 * list_pv_power2[tps]
+    list_load1[tps] = 1000 * list_load1[tps]
+    list_load2[tps] = 1000 * list_load2[tps]
+    l_perdue[tps] = 1000 * l_perdue[tps]
 
 Temps = [k/4 for k in range(len(timesteps))]
 plt.subplot(2, 2, 1)
 plt.plot(Temps, list_pv_power1, label='pv_power1')
 plt.plot(Temps, list_pv_power2, label='pv_power2')
 plt.xlabel('Temps (en h)')
-plt.ylabel('Puissance (MW)')
+plt.ylabel('Puissance (kW)')
 plt.legend()
 
 plt.subplot(2, 2, 2)
@@ -335,7 +340,7 @@ plt.legend()
 plt.subplot(2, 2, 3)
 plt.plot(Temps, l_perdue, label='Puissance perdue')
 plt.xlabel('Temps (en h)')
-plt.ylabel('Puissance (MW)')
+plt.ylabel('Puissance (kW)')
 plt.legend()
 
 plt.subplot(2, 2, 4)

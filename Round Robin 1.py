@@ -11,6 +11,8 @@ import random
 from random import *
 import matplotlib.pyplot as plt
 from matplotlib.pyplot import *
+from manip_csv import extraction_donnee
+from datetime import datetime, timedelta
 from tqdm import tqdm
 from multiprocessing import cpu_count, Pool
 
@@ -20,7 +22,7 @@ liste_coupure_moyenne = []
 liste_energie_perdue = []
 liste_moyenne_soc = []
 liste_moyenne_std = []
-nombre_simu = 100
+nombre_simu = 1
 nombre = 4
 nombre_de_foyers_max = 10  # chaque foyer dispose de sa batterie et son PV et les batteries sont reliées entre elles.
 
@@ -50,7 +52,7 @@ tab_n_donne = np.asarray(tab_n_donne)
 tab_n_recoit = np.asarray(tab_n_recoit)
 
 # Création des temporalitées :
-Temps = 24 * 3600  # (en s)
+Temps = 31 * 24 * 3600  # (en s)
 dt = (1 / 6) * 3600  # (pas de temps en s)
 nbr_pas_temps = int(Temps / dt)
 timesteps = [k for k in range(0, nbr_pas_temps)]
@@ -63,176 +65,199 @@ for k in range(0, nombre):
 tab_taux_var = np.asarray(tab_taux_var)
 
 # for nombre in range(2, nombre_de_foyers_max + 1):
-#     moyenne_nrj = 0
-#     moyenne_coupure = 0
-#     moyenne_soc = 0
-#     moyenne_std = 0
-for time in tqdm(range(0, nombre_simu)):
+moyenne_nrj = 0
+moyenne_coupure = 0
+moyenne_soc = 0
+moyenne_std = 0
+# for time in tqdm(range(0, nombre_simu)):
 
-    net = pp.create_empty_network()
+net = pp.create_empty_network()
 
-    n_donne = []
-    n_recoit = []  # listes des nombres de donations et receptions de chaque batterie
-    for k in range(0, nombre):
-        n_donne.append(0)
-        n_recoit.append(0)
+n_donne = []
+n_recoit = []  # listes des nombres de donations et receptions de chaque batterie
+for k in range(0, nombre):
+    n_donne.append(0)
+    n_recoit.append(0)
 
-    energie_perdue = 0
-    nbr_coupure = 0
-    nombre_de_foyers = nombre
+energie_perdue = 0
+nbr_coupure = 0
+nombre_de_foyers = nombre
 
-    liste_taux_var = []
-    for k in range(0, nombre):
-        liste_taux_var.append([])
+liste_taux_var = []
+for k in range(0, nombre):
+    liste_taux_var.append([])
 
-    def list_charges(mini, list_temps, num_charge):
-        charge = []
-        for temps in range(0, len(list_temps)):
-            charge.append(np.random.uniform(mini, net.load.at[num_charge, 'p_mw']))
-        return charge
 
-    # Création des bus : # Numérotés de [0, nombre_de_foyers - 1] = pvs, puis les batteries et ensuite les dem.
-    bus = []
-    for buses in range(0, 3 * nombre_de_foyers):
-        bus.append(pp.create_bus(net, vn_kv=0.4, name='bus' + str(buses)))
+def list_charges():
+    charge = []
 
-    # Création des composants :
-    pvs = []
-    batteries = []
-    charges = []
+    # Date de début (aujourd'hui à minuit)
+    start_date = datetime(2016, 1, 1)
 
-    for composants in range(nombre_de_foyers):
+    # Date de fin (un mois plus tard)
+    end_date = start_date + timedelta(days=31)
 
-        pvs.append(pp.create_sgen(net, bus=bus[composants], p_mw=0.003, index=composants, q_mvar=0, type='PV', slack=True))
+    # Heures de début et de fin des deux périodes
+    day_start = start_date.replace(hour=7, minute=0, second=0, microsecond=0)
+    day_end = start_date.replace(hour=21, minute=0, second=0, microsecond=0)
 
-        batteries.append(pp.create_storage(net, bus=bus[nombre_de_foyers + composants], p_mw=0.00,
-                                           index=nombre_de_foyers + composants, min_p_mw=0.0064, max_p_mw=0.018,
-                                           min_e_mwh=0, max_e_mwh=0.0144, q_mvar=0, min_q_mvar=-0.1, max_q_mvar=0.1
-                                           , soc_percent=50, controllable=True))
-
-        charges.append(pp.create_load(net, bus=bus[2 * nombre_de_foyers + composants], p_mw=0.00350, index=2 *
-                                      nombre_de_foyers + composants, q_mvar=0.1))
-
-    # Creation des PVs, charges et socs :
-
-    puissances_pvs = []
-    puissances_loads = []
-    mini = 0  # minimum de charge
-    liste_soc = []  # liste des socs par batterie à un instant t
-    liste_soc_temps = []  # liste des socs par batterie dans le temps
-
-    for pv in range(0, nombre_de_foyers):
-        tirage = random()
-        if tirage >= 0.5:
-            decalage = - 4 * tirage
+    # Boucle pour remplir la liste avec des valeurs toutes les 10 minutes
+    while start_date < end_date:
+        print(start_date)
+        if start_date.hour >= 6 and start_date.hour < 22:
+            # Ajouter une valeur spécifique pour les heures de jour
+            charge.append(np.random.uniform(0, 0.0035))
         else:
-            decalage = 4 * (1 - tirage)
-        puissances_pvs.append(list_gaussienne(net.sgen.at[pv, 'p_mw'], len(timesteps) / 2 + decalage, len(timesteps)
-                                              / 6,
-                                              timesteps))
-        puissances_loads.append(list_charges(mini, timesteps, 2 * nombre_de_foyers + pv))
-        liste_soc.append(net.storage.at[nombre_de_foyers + pv, 'soc_percent'])
-        liste_soc_temps.append([])
+            # Ajouter une autre valeur pour les heures de nuit
+            charge.append(np.random.uniform(0, 0.00052))
+        start_date += timedelta(minutes=10)
+    return charge
 
-    p_max_e = net.storage.at[nombre_de_foyers + 1, 'min_p_mw']
-    p_max_s = net.storage.at[nombre_de_foyers + 1, 'max_p_mw']
-    capacite = net.storage.at[nombre_de_foyers + 1, 'max_e_mwh']
-    compteur = 0
 
-    for timestep in range(0, len(timesteps)):  # boucle de temps (timestep = 10min)
+# Création des bus : # Numérotés de [0, nombre_de_foyers - 1] = pvs, puis les batteries et ensuite les dem.
+bus = []
+for buses in range(0, 3 * nombre_de_foyers):
+    bus.append(pp.create_bus(net, vn_kv=0.4, name='bus' + str(buses)))
 
-        for batterie in range(0, nombre_de_foyers):
-            liste_soc[batterie] = net.storage.at[nombre_de_foyers + batterie, 'soc_percent']
+# Création des composants :
+pvs = []
+batteries = []
+charges = []
 
-        tab_soc = np.asarray(liste_soc)  # on convertit notre liste de soc en tableau numpy
-        index_trier = tab_soc.argsort()  # renvoie la liste des indices dans l'ordre des socs
-        index_max = index_trier[nombre_de_foyers - 1]  # renvoie l'indice de la batterie ayant le SOC maximum
-        i_receveur = index_trier[compteur]  # indice de la batterie qui recoit
+for composants in range(nombre_de_foyers):
 
-        if compteur == nombre_de_foyers - 1:
-            compteur = 0
+    pvs.append(pp.create_sgen(net, bus=bus[composants], p_mw=0.003, index=composants, q_mvar=0, type='PV', slack=True))
 
-        if compteur == 0:
-            i_donneur = index_max
+    batteries.append(pp.create_storage(net, bus=bus[nombre_de_foyers + composants], p_mw=0.00,
+                                       index=nombre_de_foyers + composants, min_p_mw=0.0064, max_p_mw=0.018,
+                                       min_e_mwh=0, max_e_mwh=0.0144, q_mvar=0, min_q_mvar=-0.1, max_q_mvar=0.1
+                                       , soc_percent=50, controllable=True))
 
-        i_receveur = index_trier[compteur]
-        tab_soc[i_receveur] += 0.1 * tab_soc[i_donneur]  # la batterie donne 20% de son SOC à celle qui recoit
-        n_recoit[i_receveur] += 1
-        tab_soc[i_donneur] -= 0.1 * tab_soc[i_donneur]
-        n_donne[i_donneur] += 1
-        compteur += 1
+    charges.append(pp.create_load(net, bus=bus[2 * nombre_de_foyers + composants], p_mw=0.00350, index=2 *
+                                  nombre_de_foyers + composants, q_mvar=0.1))
 
-        for batterie in range(0, nombre_de_foyers):
-            net.storage.at[nombre_de_foyers + batterie, 'soc_percent'] = tab_soc[batterie]
+# Creation des PVs, charges et socs :
 
-        # On actualise ensuite les socs après avoir fait les opérations de transfert entre batteries
-        for composant in range(0, nombre_de_foyers):
-            soc = net.storage.at[nombre_de_foyers + composant, 'soc_percent']
-            surplu = puissances_pvs[composant][timestep] - puissances_loads[composant][timestep]  # surplu de puissance
-            if surplu > 0:  # on charge la batterie
-                soc_mod = soc + min(p_max_e, surplu) * dt / 3600 / capacite * 100
-            if surplu <= 0:  # on décharge la batterie
-                soc_mod = soc + max(- p_max_s, surplu) * dt / 3600 / capacite * 100
-            if soc_mod < 0:  # on ne descend pas en dessous de 0%
-                energie_perdue += (-soc_mod / 100) * capacite
-                soc_mod = 0
-                nbr_coupure += 1
-            if soc_mod > 100:  # on ne monte pas au-dessus de 100%
-                energie_perdue += ((soc_mod - 100) / 100) * capacite
-                soc_mod = 100
+puissances_pvs = []
+puissances_loads = []
+mini = 0  # minimum de charge
+liste_soc = []  # liste des socs par batterie à un instant t
+liste_soc_temps = []  # liste des socs par batterie dans le temps
 
-            net.storage.at[nombre_de_foyers + composant, 'soc_percent'] = soc_mod  # on met à jour la liste des SOC
-            tab_soc[composant] = soc_mod
-            liste_soc_temps[composant].append(soc_mod)
+for pv in range(0, nombre_de_foyers):
+    # tirage = random()
+    # if tirage >= 0.5:
+    #     decalage = - 4 * tirage
+    # else:
+    #     decalage = 4 * (1 - tirage)
 
-            liste_taux_var[composant].append(soc_mod - liste_soc[composant])
+    puissances_pvs.append(extraction_donnee()[0] * (1 / 1000))
+    #puissances_pvs.append(list_gaussienne(net.sgen.at[pv, 'p_mw'], len(timesteps) / 2 + decalage, len(timesteps) / 5,
+                                          #timesteps))
+    puissances_loads.append(list_charges())
+    liste_soc.append(net.storage.at[nombre_de_foyers + pv, 'soc_percent'])
+    liste_soc_temps.append([])
 
-    liste_taux_var = np.array(liste_taux_var)
-    tab_taux_var = np.add(tab_taux_var, liste_taux_var)
-    tab_n_donne += np.asarray(n_donne)
-    tab_n_recoit += np.asarray(n_recoit)
 
-for k in range(0, nombre_de_foyers):
-    tab_n_donne[k] = tab_n_donne[k] / nombre_simu
-    tab_n_recoit[k] = tab_n_recoit[k] / nombre_simu  # Tableaux des nbr de dons, donations par batteries en moyenne
+p_max_e = net.storage.at[nombre_de_foyers + 1, 'min_p_mw']
+p_max_s = net.storage.at[nombre_de_foyers + 1, 'max_p_mw']
+capacite = net.storage.at[nombre_de_foyers + 1, 'max_e_mwh']
+compteur = 0
 
-tab_taux_var = tab_taux_var / nombre_simu
 
-liste_taux_pos, liste_taux_neg = [], []
-for batterie in range(0, nombre_de_foyers):
-    liste_taux_pos.append([])
-    liste_taux_neg.append([])
-    for tps in range(0, len(timesteps)):
-        if tab_taux_var[batterie][tps] >= 0:
-            liste_taux_pos[batterie].append(tab_taux_var[batterie][tps])
-        if tab_taux_var[batterie][tps] < 0:
-            liste_taux_neg[batterie].append(tab_taux_var[batterie][tps])
+for timestep in range(0, len(timesteps)):  # boucle de temps (timestep = 10min)
 
-print(liste_taux_pos)
-print(liste_taux_neg)
-print(sum(liste_taux_pos[0]), sum(liste_taux_neg[0]))
+    for batterie in range(0, nombre_de_foyers):
+        liste_soc[batterie] = net.storage.at[nombre_de_foyers + batterie, 'soc_percent']
 
-#     moyenne_coupure += nbr_coupure
-#     moyenne_nrj += energie_perdue
-#     moyenne_soc += mo_var_ecartype(liste_soc_temps)[0]
-#     for nano in range(0, nombre_de_foyers):  # Retourne le soc moyen de tous les nano-grids
-#         moyenne_std += mo_var_ecartype(liste_soc_temps[nano])[2]
+    tab_soc = np.asarray(liste_soc)  # on convertit notre liste de soc en tableau numpy
+    index_trier = tab_soc.argsort()  # renvoie la liste des indices dans l'ordre des socs
+    index_max = index_trier[nombre_de_foyers - 1]  # renvoie l'indice de la batterie ayant le SOC maximum
+    i_receveur = index_trier[compteur]  # indice de la batterie qui recoit
+
+    if compteur == nombre_de_foyers - 1:
+        compteur = 0
+
+    if compteur == 0:
+        i_donneur = index_max
+
+    i_receveur = index_trier[compteur]
+    tab_soc[i_receveur] += 0.1 * tab_soc[i_donneur]  # la batterie donne 20% de son SOC à celle qui recoit
+    n_recoit[i_receveur] += 1
+    tab_soc[i_donneur] -= 0.1 * tab_soc[i_donneur]
+    n_donne[i_donneur] += 1
+    compteur += 1
+
+    for batterie in range(0, nombre_de_foyers):
+        net.storage.at[nombre_de_foyers + batterie, 'soc_percent'] = tab_soc[batterie]
+
+    # On actualise ensuite les socs après avoir fait les opérations de transfert entre batteries
+    for composant in range(0, nombre_de_foyers):
+        soc = net.storage.at[nombre_de_foyers + composant, 'soc_percent']
+        surplu = puissances_pvs[composant][timestep] - puissances_loads[composant][timestep]  # surplu de puissance
+        if surplu > 0:  # on charge la batterie
+            soc_mod = soc + min(p_max_e, surplu) * dt / 3600 / capacite * 100
+        if surplu <= 0:  # on décharge la batterie
+            soc_mod = soc + max(- p_max_s, surplu) * dt / 3600 / capacite * 100
+
+        if soc_mod < 0:  # on ne descend pas en dessous de 0%
+            energie_perdue += (-soc_mod / 100) * capacite
+            soc_mod = 0
+            nbr_coupure += 1
+        if soc_mod > 100:  # on ne monte pas au-dessus de 100%
+            energie_perdue += ((soc_mod - 100) / 100) * capacite
+            soc_mod = 100
+
+        net.storage.at[nombre_de_foyers + composant, 'soc_percent'] = soc_mod  # on met à jour la liste des SOC
+        tab_soc[composant] = soc_mod
+        liste_soc_temps[composant].append(soc_mod)
+
+        liste_taux_var[composant].append(soc_mod - liste_soc[composant])
+
+# liste_taux_var = np.array(liste_taux_var)
+# tab_taux_var = np.add(tab_taux_var, liste_taux_var)
+# tab_n_donne += np.asarray(n_donne)
+# tab_n_recoit += np.asarray(n_recoit)
+
+moyenne_coupure += nbr_coupure
+moyenne_nrj += energie_perdue
+moyenne_soc += mo_var_ecartype(liste_soc_temps)[0]
+for nano in range(0, nombre_de_foyers):  # Retourne le soc moyen de tous les nano-grids
+    moyenne_std += mo_var_ecartype(liste_soc_temps[nano])[2]
+
+# Comamndes pour les nombres d'emissions/receptions et les taux de variations des SOCs :
+
+# for k in range(0, nombre_de_foyers):
+#     tab_n_donne[k] = tab_n_donne[k] / nombre_simu
+#     tab_n_recoit[k] = tab_n_recoit[k] / nombre_simu  # Tableaux des nbr de dons, donations par batteries en moyenne
 #
-# moyenne_std = moyenne_std / nombre_de_foyers
+# tab_taux_var = tab_taux_var / nombre_simu
 #
-# moyenne_coupure = moyenne_coupure / nombre_simu
-# moyenne_nrj = moyenne_nrj / nombre_simu
-# moyenne_soc = moyenne_soc / nombre_simu
-# moyenne_std = moyenne_std / nombre_simu
-#
-# liste_coupure_moyenne.append(moyenne_coupure)
-# liste_energie_perdue.append(moyenne_nrj)
-# liste_moyenne_soc.append(moyenne_soc)
-# liste_moyenne_std.append(moyenne_std)
+# liste_taux_pos, liste_taux_neg = [], []
+# for batterie in range(0, nombre_de_foyers):
+#     liste_taux_pos.append([])
+#     liste_taux_neg.append([])
+#     for tps in range(0, len(timesteps)):
+#         if tab_taux_var[batterie][tps] >= 0:
+#             liste_taux_pos[batterie].append(tab_taux_var[batterie][tps])
+#         if tab_taux_var[batterie][tps] < 0:
+#             liste_taux_neg[batterie].append(tab_taux_var[batterie][tps])
 
-liste_temps = [k * dt / 3600 for k in range(len(timesteps))]
-colors = ['blue', 'green', 'red', 'orange', 'grey', 'yellow', 'cyan', 'black', 'purple', 'blue', 'green', 'red',
-          'orange', 'grey', 'yellow', 'cyan', 'black', 'purple']
+
+moyenne_std = moyenne_std / nombre_de_foyers
+
+
+liste_coupure_moyenne.append(moyenne_coupure)
+liste_energie_perdue.append(moyenne_nrj)
+liste_moyenne_soc.append(moyenne_soc)
+liste_moyenne_std.append(moyenne_std)
+
+print(moyenne_coupure, moyenne_soc, moyenne_nrj, moyenne_std)
+
+liste_temps = [k for k in range(len(extraction_donnee()[0]))]
+
+colors = ['blue', 'green', 'red', 'orange', 'grey', 'cyan', 'black', 'purple', 'blue', 'green', 'red',
+          'orange', 'grey', 'cyan', 'black', 'purple']
 line_styles = ['-', '--', ':', 'o']
 
 
@@ -241,14 +266,14 @@ line_styles = ['-', '--', ':', 'o']
 # liste_energie_perdue = np.asarray(liste_energie_perdue)
 # liste_moyenne_soc = np.asarray(liste_moyenne_soc)
 # liste_moyenne_std = np.asarray(liste_moyenne_std)
-
+#
 # plt.subplot(2, 2, 1)
 # plt.bar(l_nombre, liste_coupure_moyenne / l_nombre, color='red')
 # plt.xlabel('Nombre de nano-grid')
 # plt.ylabel('Nombre de coupures par jour')
 #
 # plt.subplot(2, 2, 2)
-# plt.bar(l_nombre, 1000 * liste_energie_perdue / l_nombre, color='green')
+# plt.bar(l_nombre, liste_energie_perdue / l_nombre, color='green')
 # plt.xlabel('Nombre de nano-grid')
 # plt.ylabel('Energie perdue par jour en kW')
 #
@@ -264,32 +289,87 @@ line_styles = ['-', '--', ':', 'o']
 #
 # plt.show()
 
+for pv in range(0, len(puissances_pvs)):
+    for tps in range(0, len(puissances_pvs[0])):
+        puissances_pvs[pv][tps] = 1000 * puissances_pvs[pv][tps]
+        puissances_loads[pv][tps] = 1000 * puissances_loads[pv][tps]
 
-# for composant in range(0, nombre_de_foyers):
-#
-#     plt.subplot(3, 1, 1)
-#     plt.plot(liste_temps, puissances_pvs[composant], label='PV ' + str(composant), color=colors[composant],
-#              linestyle=line_styles[0])
-#     plt.xlabel('Temps (en h)')
-#     plt.ylabel('Puissance RR1 (MW)')
-#     plt.legend(loc='upper left', prop={'size': 8})
-#
-#     plt.subplot(3, 1, 2)
-#     plt.plot(liste_temps, puissances_loads[composant], label='Charge ' + str(composant), color=colors[composant],
-#              linestyle=line_styles[1])
-#     plt.xlabel('Temps (en h)')
-#     plt.ylabel('Puissance (MW)')
-#     plt.legend(loc='upper left', prop={'size': 8})
-#
-#     plt.subplot(3, 1, 3)
-#     plt.plot(liste_temps, liste_soc_temps[composant], label='SOC ' + str(composant), color=colors[composant],
-#              linestyle=line_styles[0])
-#     plt.xlabel('Temps (en h)')
-#     plt.ylabel('SOC (en %)')
-#     plt.legend(loc='upper left', prop={'size': 8})
-#
-#
-# plt.show()
+
+for composant in range(0, nombre_de_foyers):
+
+    ax1 = plt.subplot(3, 1, 1)
+    ax1.plot(liste_temps, extraction_donnee()[0], label='PV ' + str(composant), color=colors[composant],
+             linestyle=line_styles[0])
+    plt.xlabel('Temps (en j)')
+    plt.ylabel('Puissance RR1 (kW)')
+    plt.legend(loc='upper left', prop={'size': 8})
+
+    lst_position = np.arange(144, len(extraction_donnee()[0]) + 144, 144)
+    l_xlabel = np.arange(1, 32)
+    ax1.set_xticks(lst_position, l_xlabel)
+
+    # fig1, ax1 = plt.subplot()
+    #
+    # ax1.plot(liste_temps,  extraction_donnee()[0], label='PV ' + str(composant), color=colors[composant],
+    #          linestyle=line_styles[0])
+    #
+    # plt.xlabel('Temps (en j)')
+    # plt.ylabel('Puissance RR1 (kW)')
+    #
+    # plt.legend(loc='upper left', prop={'size': 8})
+    #
+    # lst_position = np.arange(144, len(extraction_donnee()[0]) + 144, 144)
+    # l_xlabel = np.arange(1, 32)
+    # ax1.set_xticks(lst_position, l_xlabel)
+
+    ax2 = plt.subplot(3, 1, 2)
+    ax2.plot(liste_temps, puissances_loads[composant], label='Charge ' + str(composant), color=colors[composant],
+             linestyle=line_styles[1])
+    plt.xlabel('Temps (en j)')
+    plt.ylabel('Puissance (kW)')
+    plt.legend(loc='upper left', prop={'size': 8})
+
+    lst_position = np.arange(144, len(extraction_donnee()[0]) + 144, 144)
+    l_xlabel = np.arange(1, 32)
+    ax2.set_xticks(lst_position, l_xlabel)
+
+    # fig2, ax2 = plt.subplot()
+    #
+    # ax2.plot(liste_temps, puissances_loads[composant], label='Charge ' + str(composant), color=colors[composant],
+    #          linestyle=line_styles[1])
+    # plt.xlabel('Temps (en j)')
+    # plt.ylabel('Puissance (kW)')
+    # plt.legend(loc='upper left', prop={'size': 8})
+    #
+    # lst_position = np.arange(144, len(extraction_donnee()[0]) + 144, 144)
+    # l_xlabel = np.arange(1, 32)
+    # ax2.set_xticks(lst_position, l_xlabel)
+
+    ax3 = plt.subplot(3, 1, 3)
+    ax3.plot(liste_temps, liste_soc_temps[composant], label='SOC ' + str(composant), color=colors[composant],
+             linestyle=line_styles[0])
+    plt.xlabel('Temps (en j)')
+    plt.ylabel('SOC (en %)')
+    plt.legend(loc='upper left', prop={'size': 8})
+
+    lst_position = np.arange(144, len(extraction_donnee()[0]) + 144, 144)
+    l_xlabel = np.arange(1, 32)
+    ax3.set_xticks(lst_position, l_xlabel)
+
+    # fig3, ax3 = plt.subplot()
+    #
+    # ax3.plot(liste_temps, liste_soc_temps[composant], label='SOC ' + str(composant), color=colors[composant],
+    #          linestyle=line_styles[0])
+    # plt.xlabel('Temps (en h)')
+    # plt.ylabel('SOC (en %)')
+    # plt.legend(loc='upper left', prop={'size': 8})
+    #
+    # lst_position = np.arange(144, len(extraction_donnee()[0]) + 144, 144)
+    # l_xlabel = np.arange(1, 32)
+    # ax3.set_xticks(lst_position, l_xlabel)
+
+plt.show()
+
 
 
 

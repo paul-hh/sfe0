@@ -3,6 +3,8 @@ import numpy as np
 from pandapower import timeseries as ts
 import matplotlib.pyplot as plt
 import random
+from random import *
+
 net = pp.create_empty_network()
 
 # Création des bus :
@@ -48,7 +50,7 @@ def list_gaussienne(amplitude, centre, ecart_type, t):
     x = t.copy()
     y = x.copy()
     for k in range(len(x)):
-        y[k] = amplitude * np.exp(-(x[k] - centre)**2 / (2 * ecart_type**2))
+        y[k] = amplitude * np.exp(-(x[k] - centre)**2 / (2 * ecart_type**2)) + (random() / 10) * amplitude
     return y
 
 
@@ -81,11 +83,15 @@ for timestep in range(len(timesteps)):
 
 Temps = [k/4 for k in range(len(timesteps))]
 
+for tps in range(0, len(list_pv_power)):
+    list_pv_power[tps] = 1000 * list_pv_power[tps]
+    list_demand[tps] = 1000 * list_demand[tps]
+
 plt.subplot(1, 2, 1)
 plt.plot(Temps, list_pv_power, label='pv_power')
 plt.plot(Temps, list_demand, label='load_power')
 plt.xlabel('Temps (en h)')
-plt.ylabel('Puissance (mW)')
+plt.ylabel('Puissance (kW)')
 plt.title('Puissances sur une journée')
 plt.legend()
 
